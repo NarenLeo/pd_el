@@ -6,7 +6,7 @@ project:
   discord: ""
   description: "A serially interfaced iterative CORDIC accelerator supporting vector rotation, magnitude and phase calculation, selectable iteration count, and optional shift-add gain compensation."
   language: "Verilog"
-  clock_hz: 10MHz
+  clock_hz: 10000000
 
   tiles: "1x1"
   top_module: "tt_um_cordic_iter"
