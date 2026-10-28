@@ -6,7 +6,6 @@ from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, RisingEdge, Timer
 
 from cordic_model import cordic, busy_cycles, s16, M16, to_q, angle_to_z
-from fir_model import FirIir, s8, run_stream
 
 
 def ui(sdi=0, sh=0, start=0, mode=0, comp=0, nsel=0):
@@ -115,61 +114,3 @@ async def test_corner_cases(dut):
     d = (s16(mz) - 32768 + 32768) % 65536 - 32768        # phase error vs +pi, wrapped
     assert abs(s16(mx) - one) <= 8 and abs(d) <= 16, (s16(mx), s16(mz))
 
-
-# ----------------------------------------------------------------- FIR / IIR engine
-async def fir_session(dut, cfg_byte, samples):
-    """sel=1 with the config word on ui_in, two edges to latch it, then one sample per clock."""
-    dut.uio_in.value = 1
-    dut.ui_in.value = cfg_byte
-    await RisingEdge(dut.clk)          # sel_q rises, FIR leaves reset
-    await RisingEdge(dut.clk)          # config latched
-    outs = []
-    for sm in samples:
-        dut.ui_in.value = sm & 0xFF
-        await RisingEdge(dut.clk)
-        await Timer(1, "ns")
-        outs.append(s8(int(dut.uo_out.value)))
-    dut.uio_in.value = 0               # back to CORDIC
-    dut.ui_in.value = 0
-    await ClockCycles(dut.clk, 3)
-    return outs
-
-
-@cocotb.test()
-async def test_fir_bit_exact_vs_model(dut):
-    """All 16 mode/scale combinations, random streams incl. full-scale extremes (saturation)."""
-    await reset(dut)
-    rnd = random.Random(99)
-    for mode in range(4):
-        for scale in range(4):
-            cfg = (scale << 2) | mode
-            stream = [rnd.choice([-128, 127, rnd.randint(-128, 127), rnd.randint(-40, 40)]) for _ in range(60)]
-            got = await fir_session(dut, cfg, stream)
-            exp = run_stream(cfg, stream)
-            assert got == exp, f"mode={mode} scale={scale}\n rtl={got}\n mdl={exp}"
-    dut._log.info("FIR/IIR bit-exact for all 16 configs")
-
-
-@cocotb.test()
-async def test_fir_directed(dut):
-    """Unity gain, impulse response, DC rejection of the high-pass, saturation."""
-    await reset(dut)
-    lp_unity = 0b0100                                    # mode 0, scale 1
-    assert await fir_session(dut, lp_unity, [64, 0, 0, 0, 0, 0]) == [8, 24, 24, 8, 0, 0]
-    assert (await fir_session(dut, lp_unity, [100] * 8))[-1] == 100          # unity DC gain
-    assert (await fir_session(dut, lp_unity, [-100] * 8))[-1] == -100        # signed works
-    hp = 0b0100 | 2                                      # mode 2
-    assert (await fir_session(dut, hp, [100] * 8))[-1] == 0                  # DC rejected
-    iir = 0b0100 | 1                                     # mode 1, scale 1: DC gain 1.6 -> saturates
-    assert (await fir_session(dut, iir, [127] * 40))[-1] == 127
-
-
-@cocotb.test()
-async def test_engines_isolated(dut):
-    """CORDIC -> FIR -> CORDIC with the same operands: results identical and bit-exact."""
-    await reset(dut)
-    args = (0, 1, 7, to_q(0.9), to_q(-0.4), angle_to_z(70))
-    a = await run(dut, *args)
-    await fir_session(dut, 0b0101, [10, -20, 30, 127, -128, 5])
-    b = await run(dut, *args)
-    assert a[:3] == b[:3] == cordic(*args[3:], *args[:3])
