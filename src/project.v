@@ -11,6 +11,16 @@ module tt_um_cordic_iter (
     input  wire       rst_n
 );
 
+  // DSP selected by uio_in[0]; completely independent streaming lane.
+  wire dsp_sel = uio_in[0];
+  wire [7:0] dsp_result;
+  dsp_fir_iir dsp_unit (
+      .clk(clk), .rst_n(rst_n), .sel(dsp_sel),
+      .data_in(ui_in), .data_out(dsp_result)
+  );
+  // Block CORDIC commands while DSP is selected.
+  wire [7:0] cordic_ui = dsp_sel ? 8'b0 : ui_in;
+
   localparam [1:0] S_RDY = 2'd0, S_PRE = 2'd1, S_ITER = 2'd2, S_COMP = 2'd3;
   reg signed [15:0] x, y;
   reg        [15:0] z;
@@ -19,9 +29,9 @@ module tt_um_cordic_iter (
   reg               mode_q, comp_q, done_q, start_q;
   reg        [3:0]  last_q;
 
-  wire sdi    = ui_in[0];
-  wire sh_en  = ui_in[1];
-  wire start  = ui_in[2];
+  wire sdi    = cordic_ui[0];
+  wire sh_en  = cordic_ui[1];
+  wire start  = cordic_ui[2];
   wire start_pe = start & ~start_q;
 
   wire in_pre  = (state == S_PRE);
@@ -95,9 +105,9 @@ module tt_um_cordic_iter (
       case (state)
         S_RDY: begin
           if (start_pe) begin
-            mode_q <= ui_in[3];
-            comp_q <= ui_in[4];
-            last_q <= {1'b0, ui_in[7:5]} + 4'd4;   // N-1
+            mode_q <= cordic_ui[3];
+            comp_q <= cordic_ui[4];
+            last_q <= {1'b0, cordic_ui[7:5]} + 4'd4;   // N-1
             done_q <= 1'b0;
             i      <= 4'd0;
             state  <= S_PRE;
@@ -138,7 +148,7 @@ module tt_um_cordic_iter (
 
 
   wire busy = (state != S_RDY);
-  assign uo_out  = {i, 1'b0, done_q, busy, x[15]};
+  assign uo_out  = dsp_sel ? dsp_result : {i, 1'b0, done_q, busy, x[15]};
   assign uio_out = 8'h00;
   assign uio_oe  = 8'h00;
 
