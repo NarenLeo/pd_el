@@ -13,6 +13,7 @@ project:
 
   source_files:
     - "project.v"
+    - "dsp_fir_iir.v"
 
 # Pinout
 pinout:
