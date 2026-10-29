@@ -7,7 +7,7 @@ TOPLEVEL_LANG ?= verilog
 
 SRC_DIR = $(PWD)/../src
 
-VERILOG_SOURCES = $(SRC_DIR)/project.v
+VERILOG_SOURCES = $(SRC_DIR)/project.v $(SRC_DIR)/cordic_serial.v $(SRC_DIR)/dsp_fir_iir.v
 
 TOPLEVEL = tt_um_cordic_iter
 
