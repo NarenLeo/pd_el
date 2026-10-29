@@ -13,7 +13,7 @@ module dsp_fir_iir (
     reg sel_q, cfg_ready;
     reg [1:0] mode_q;
     reg signed [7:0] h1, h2, h3;
-    reg signed [11:0] iir_prev;
+    reg signed [8:0] iir_prev;
 
     wire signed [7:0] sample = $signed(data_in);
 
@@ -30,29 +30,32 @@ module dsp_fir_iir (
     wire signed [10:0] fir_lp = fir_numer >>> 3;
 
     // Preserve the previous IIR fixed-point semantics (floor for negatives).
-    wire signed [11:0] input_ext = {{4{sample[7]}}, sample};
-    wire signed [11:0] iir_val =
-        input_ext + ((iir_prev + (iir_prev <<< 1)) >>> 3);
+    // IIR steady-state bound from reset: -205..203 for signed 8-bit input.
+    // Keep the tripled-feedback intermediate wide enough (-615..609).
+    wire signed [10:0] prev_ext = {{2{iir_prev[8]}}, iir_prev};
+    wire signed [10:0] prev_triple = prev_ext + (prev_ext <<< 1);
+    wire signed [8:0] iir_val =
+        $signed({sample[7], sample}) + (prev_triple >>> 3);
 
-    wire signed [11:0] lp_ext = {{1{fir_lp[10]}}, fir_lp};
-    reg signed [11:0] core;
+    wire signed [8:0] lp_9 = fir_lp[8:0];
+    reg signed [8:0] core;
     always @* begin
         case (mode_q)
-            2'd0: core = lp_ext;
+            2'd0: core = lp_9;
             2'd1: core = iir_val;
-            2'd2: core = input_ext - lp_ext;
-            2'd3: core = input_ext;
-            default: core = 12'sd0;
+            2'd2: core = $signed({sample[7], sample}) - lp_9;
+            2'd3: core = $signed({sample[7], sample});
+            default: core = 9'sd0;
         endcase
     end
 
-    // Clip signed 12-bit output to signed 8-bit, retaining the old behavior.
+    // For a signed 9-bit result, bits 8 and 7 are equal exactly when
+    // the value fits signed 8-bit range. Otherwise saturate by sign.
     function [7:0] clip8;
-        input signed [11:0] val;
+        input signed [8:0] val;
         begin
-            if (val > 12'sd127) clip8 = 8'h7f;
-            else if (val < -12'sd128) clip8 = 8'h80;
-            else clip8 = val[7:0];
+            if (val[8] == val[7]) clip8 = val[7:0];
+            else clip8 = val[8] ? 8'h80 : 8'h7f;
         end
     endfunction
 
@@ -64,7 +67,7 @@ module dsp_fir_iir (
             h1 <= 8'sd0;
             h2 <= 8'sd0;
             h3 <= 8'sd0;
-            iir_prev <= 12'sd0;
+            iir_prev <= 9'sd0;
             data_out <= 8'd0;
         end else if (!sel_q) begin
             sel_q <= 1'b1;
