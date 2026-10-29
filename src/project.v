@@ -18,8 +18,9 @@ module tt_um_cordic_iter (
       .clk(clk), .rst_n(rst_n), .sel(dsp_sel),
       .data_in(ui_in), .data_out(dsp_result)
   );
-  // Block CORDIC commands while DSP is selected.
-  wire [7:0] cordic_ui = dsp_sel ? 8'b0 : ui_in;
+  // Block only CORDIC command strobes while DSP is selected.
+  // Other bits are only used when start/sh_en is active.
+  wire [7:0] cordic_ui = ui_in;
 
   localparam [1:0] S_RDY = 2'd0, S_PRE = 2'd1, S_ITER = 2'd2, S_COMP = 2'd3;
   reg signed [15:0] x, y;
@@ -30,8 +31,8 @@ module tt_um_cordic_iter (
   reg        [3:0]  last_q;
 
   wire sdi    = cordic_ui[0];
-  wire sh_en  = cordic_ui[1];
-  wire start  = cordic_ui[2];
+  wire sh_en  = cordic_ui[1] & ~dsp_sel;
+  wire start  = cordic_ui[2] & ~dsp_sel;
   wire start_pe = start & ~start_q;
 
   wire in_pre  = (state == S_PRE);
